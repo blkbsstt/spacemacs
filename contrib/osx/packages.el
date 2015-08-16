@@ -1,11 +1,22 @@
-(defvar osx-packages
+(setq osx-packages
   '(
     pbcopy
-    )
-  "List of all packages to install and/or initialize. Built-in packages
-which require an initialization must be listed explicitly in the list.")
+    reveal-in-osx-finder
+    ))
+
+(if (and (system-is-mac) (executable-find "gls")) 
+    ;; maybe absolute or relative name of the `ls' program used by
+    ;; `insert-directory'.
+    ;; brew info coreutils
+    (setq insert-directory-program "gls"
+          dired-listing-switches "-aBhl --group-directories-first"))
 
 (defun osx/init-pbcopy ()
   (use-package pbcopy
-    :if (not (display-graphic-p))
+    :if (and (system-is-mac)(not (display-graphic-p))) 
     :init (turn-on-pbcopy)))
+
+(defun osx/init-reveal-in-osx-finder ()
+  (use-package reveal-in-osx-finder
+    :if (system-is-mac)
+    :commands reveal-in-osx-finder))

@@ -10,13 +10,8 @@
 ;;
 ;;; License: GPLv3
 
-(defvar slime-packages
-  '(slime)
-  "List of all packages to install and/or initialize. Built-in packages
-which require an initialization must be listed explicitly in the list.")
-
-(defvar slime-excluded-packages '()
-  "List of packages to exclude.")
+(setq slime-packages
+  '(slime))
 
 (defun slime/init-slime ()
   (use-package slime
@@ -28,17 +23,46 @@ which require an initialization must be listed explicitly in the list.")
                              slime-sbcl-exts
                              slime-scratch)
             inferior-lisp-program "sbcl")
-
       ;; enable fuzzy matching in code buffer and SLIME REPL
       (setq slime-complete-symbol*-fancy t)
       (setq slime-complete-symbol-function 'slime-fuzzy-complete-symbol)
-
       ;; enabel smartparen in code buffer and SLIME REPL
-      (add-hook 'slime-repl-mode-hook #'smartparens-strict-mode)
-
+      ;; (add-hook 'slime-repl-mode-hook #'smartparens-strict-mode)
+      (defun slime/disable-smartparens ()
+        (smartparens-strict-mode -1)
+        (turn-off-smartparens-mode))
+      (add-hook 'slime-repl-mode-hook #'slime/disable-smartparens)
       (add-to-hooks 'slime-mode '(lisp-mode-hook scheme-mode-hook)))
     :config
-    (message "loading slime...")
-    (slime-setup)
-    (dolist (m `(,slime-mode-map ,slime-repl-mode-map))
-      (define-key m [(tab)] 'slime-fuzzy-complete-symbol))))
+    (progn
+      (slime-setup)
+      (dolist (m `(,slime-mode-map ,slime-repl-mode-map))
+        (define-key m [(tab)] 'slime-fuzzy-complete-symbol))
+      (dolist (m '(lisp-mode
+                   scheme-mode))
+        (evil-leader/set-key-for-mode m
+          "mcc" 'slime-compile-file
+          "mcC" 'slime-compile-and-load-file
+          "mcf" 'slime-compile-defun
+          "mcr" 'slime-compile-region
+
+          "meb" 'slime-eval-buffer
+          "mef" 'slime-eval-defun
+          "mee" 'slime-eval-last-sexp
+          "mer" 'slime-eval-region
+
+          "mgg" 'slime-inspect-definition
+          "mgn" 'slime-next-note
+          "mgN" 'slime-previous-note
+          "mgp" 'slime-previous-note
+
+          "mha" 'slime-apropos
+          "mhd" 'slime-disassemble-symbol
+          "mhh" 'slime-describe-function
+          "mhH" 'slime-hyperspec-lookup
+
+          "mse" 'slime-eval-last-expression-in-repl
+          "msi" 'slime
+          "msq" 'slime-quit-lisp
+
+          "mtf" 'slime-toggle-fancy-trace)))))

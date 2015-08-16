@@ -26,7 +26,6 @@
                                        ("f" .  "files")
                                        ("fe" . "files-emacs/spacemacs")
                                        ("g" .  "git/versions-control")
-                                       ("gc" . "smeargle")
                                        ("h" .  "helm/help/highlight")
                                        ("hd" . "help-describe")
                                        ("i" .  "insertion")
@@ -36,11 +35,11 @@
                                        ("kD" .  "lisp-delete-backward")
                                        ("n" .  "narrow/numbers")
                                        ("p" .  "projects")
+                                       ("p$" .  "projects/shell")
                                        ("q" .  "quit")
                                        ("r" .  "registers/rings")
                                        ("s" .  "search/symbol")
                                        ("sw" .  "search-web")
-                                       ("S" .  "spelling")
                                        ("t" .  "toggles")
                                        ("tC" . "toggles-colors")
                                        ("th" . "toggles-highlight")
@@ -50,6 +49,7 @@
                                        ("wp" . "windows-popup")
                                        ("wS" . "windows-size")
                                        ("x" .  "text")
+                                       ("xa" . "text-align")
                                        ("xd" . "text-delete")
                                        ("xg" . "text-google-translate")
                                        ("xm" . "text-move")
@@ -72,6 +72,13 @@
 ;; Also auto refresh dired, but be quiet about it
 (setq global-auto-revert-non-file-buffers t
       auto-revert-verbose nil)
+;; Regexp for useful and useless buffers for smarter buffer switching
+(defvar spacemacs-useless-buffers-regexp '("*\.\+")
+  "Regexp used to determine if a buffer is not useful.")
+(defvar spacemacs-useful-buffers-regexp '("\\*\\(scratch\\|terminal\.\+\\|ansi-term\\|eshell\\)\\*")
+  "Regexp used to define buffers that are useful despite matching
+`spacemacs-useless-buffers-regexp'.")
+
 ;; activate winner mode use to undo and redo windows layout
 (winner-mode t)
 ;; no beep pleeeeeease ! (and no visual blinking too please)
@@ -105,19 +112,26 @@ It runs `tabulated-list-revert-hook', then calls `tabulated-list-print'."
 ;; goto-address-prog-mode only highlights links in strings and comments
 (add-hook 'prog-mode-hook 'goto-address-prog-mode)
 
-;; When point is on paranthesis, highlight the matching one
-(show-paren-mode t)
-
 ;; ---------------------------------------------------------------------------
 ;; Edit
 ;; ---------------------------------------------------------------------------
 
-(spacemacs|defvar-company-backends emacs-lisp-mode)
 ;; start scratch in text mode (usefull to get a faster Emacs load time
 ;; because it avoids autoloads of elisp modes)
 (setq initial-major-mode 'text-mode)
 ;; whitespace-mode
-(add-hook 'prog-mode-hook (lambda () (setq show-trailing-whitespace 1)))
+(defcustom spacemacs-show-trailing-whitespace t
+  "If t, show trailing whitespace."
+  :type 'boolean
+  :group 'spacemacs)
+
+(add-hook 'prog-mode-hook (lambda ()
+                            (when spacemacs-show-trailing-whitespace
+                              (set-face-attribute 'trailing-whitespace nil
+                                                  :background (face-attribute 'font-lock-comment-face
+                                                                              :foreground))
+                              (setq show-trailing-whitespace 1))))
+
 
 ;; use only spaces and no tabs
 (setq-default indent-tabs-mode nil
@@ -150,6 +164,15 @@ Can be installed with `brew install trash'."
 
 ;; Save clipboard contents into kill-ring before replace them
 (setq save-interprogram-paste-before-kill t)
+
+;; Single space between sentences is more widespread than double
+(setq-default sentence-end-double-space nil)
+
+;; The C-d rebinding that most shell-like buffers inherit from
+;; comint-mode assumes non-evil configuration with its
+;; `comint-delchar-or-maybe-eof' function, so we disable it
+(eval-after-load 'comint
+  '(define-key comint-mode-map (kbd "C-d") nil))
 
 ;; ---------------------------------------------------------------------------
 ;; UI
@@ -197,11 +220,33 @@ Can be installed with `brew install trash'."
 (setq custom-file (dotspacemacs/location))
 ;; scratch buffer empty
 (setq initial-scratch-message nil)
-;; don't create backup~ or #auto-save# files
+;; don't create backup~ files
 (setq backup-by-copying t
       make-backup-files nil
-      auto-save-default nil
       create-lockfiles nil)
+
+;; Auto-save file
+(setq auto-save-default (not (null dotspacemacs-auto-save-file-location)))
+(setq auto-save-list-file-prefix (concat spacemacs-auto-save-directory))
+;; always save TRAMP URLs to cache directory no matter what is the value
+;; of `dotspacemacs-auto-save-file-location'
+(let ((autosave-dir (concat spacemacs-auto-save-directory "dist/")))
+  (setq auto-save-file-name-transforms
+        `(("\\`/[^/]*:\\([^/]*/\\)*\\([^/]*\\)\\'" ,autosave-dir  t)))
+  (unless (or (file-exists-p autosave-dir)
+              (null dotspacemacs-auto-save-file-location))
+    (make-directory autosave-dir t)))
+;; Choose auto-save location
+(case dotspacemacs-auto-save-file-location
+  (cache (let ((autosave-dir (concat spacemacs-auto-save-directory "site/")))
+           (add-to-list 'auto-save-file-name-transforms
+                        `(".*" ,autosave-dir t) 'append)
+           (unless (file-exists-p autosave-dir)
+             (make-directory autosave-dir t))))
+  (original (setq auto-save-visited-file-name t))
+  (_ (setq auto-save-default nil
+           auto-save-list-file-prefix nil)))
+
 (require 'uniquify)
 ;; When having windows with repeated filenames, uniquify them
 ;; by the folder they are in rather those annoying <2>,<3>,.. etc
@@ -221,17 +266,9 @@ Can be installed with `brew install trash'."
 (setq savehist-file (concat spacemacs-cache-directory "savehist")
       enable-recursive-minibuffers t ; Allow commands in minibuffers
       history-length 1000
-      savehist-additional-variables '(kill-ring mark-ring global-mark-ring search-ring regexp-search-ring extended-command-history)
+      savehist-additional-variables '(mark-ring global-mark-ring search-ring regexp-search-ring extended-command-history)
       savehist-autosave-interval 60)
 (savehist-mode +1)
-
-;; auto-save
-(let
-    ((autosave-dir (expand-file-name (concat spacemacs-cache-directory "autosave"))))
-  (unless (file-exists-p autosave-dir)
-    (make-directory autosave-dir))
-  (setq auto-save-list-file-prefix (concat autosave-dir "/")
-        auto-save-file-name-transforms `((".*" ,autosave-dir t))))
 
 ;; cache files
 ;; bookmarks

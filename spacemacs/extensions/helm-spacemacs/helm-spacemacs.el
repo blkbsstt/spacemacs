@@ -36,6 +36,12 @@
 (defvar helm-spacemacs-all-packages '()
   "Hash table of all packages in all layers.")
 
+(defvar helm-spacemacs-all-pre-extensions '()
+  "Hash table of all pre-extensions in all layers.")
+
+(defvar helm-spacemacs-all-post-extensions '()
+  "Hash table of all post-extensions in all layers.")
+
 ;;;###autoload
 (define-minor-mode helm-spacemacs-mode
   "Layers discovery with helm interface."
@@ -53,7 +59,11 @@
             (configuration-layer//load-layer-files layer '("funcs.el"
                                                            "config.el"))))
         (setq helm-spacemacs-all-packages (configuration-layer/get-packages
-                                           helm-spacemacs-all-layers)))))
+                                           helm-spacemacs-all-layers))
+        (setq helm-spacemacs-all-pre-extensions
+              (configuration-layer/get-extensions helm-spacemacs-all-layers t))
+        (setq helm-spacemacs-all-post-extensions
+              (configuration-layer/get-extensions helm-spacemacs-all-layers)))))
 
 ;;;###autoload
 (defun helm-spacemacs ()
@@ -61,16 +71,71 @@
   (interactive)
   (helm-spacemacs-mode)
   (helm :buffer "*helm: spacemacs*"
-        :sources `(,(helm-spacemacs//layer-source)
+        :sources `(,(helm-spacemacs//documentation-source)
+                   ,(helm-spacemacs//layer-source)
                    ,(helm-spacemacs//package-source)
+                   ,(helm-spacemacs//dotspacemacs-source)
                    ,(helm-spacemacs//toggle-source))))
+
+(defun helm-spacemacs//documentation-source ()
+  "Construct the helm source for the documentation section."
+  (helm-build-sync-source "Spacemacs Documentation"
+    :candidates #'helm-spacemacs//documentation-candidates
+    :persistent-action #'helm-spacemacs//documentation-action-open-file
+    :keymap helm-map
+    :action (helm-make-actions
+             "Open Documentation" #'helm-spacemacs//documentation-action-open-file)))
+
+(defun helm-spacemacs//documentation-candidates ()
+  (let (result file-extension)
+    (dolist (filename (directory-files spacemacs-docs-directory))
+      (setq file-extension (file-name-extension filename))
+      (when (or (equal file-extension "md")
+                (equal file-extension "org"))
+        (push filename result)))
+    ;; delete DOCUMENTATION.org to make it the first guide
+    (delete "DOCUMENTATION.org" result)
+    (push "DOCUMENTATION.org" result)
+
+    ;; give each document an appropriate title
+    (mapcar (lambda (r)
+              (cond
+               ((string-equal r "CONTRIBUTE.org")
+                `("How to contribute to Spacemacs" . ,r))
+               ((string-equal r "CONVENTIONS.org")
+                `("Spacemacs conventions" . ,r))
+               ((string-equal r "DOCUMENTATION.org")
+                `("Spacemacs starter guide" . ,r))
+               ((string-equal r "HOWTOs.org")
+                `("Quick HOW-TOs for Spacemacs" . ,r))
+               ((string-equal r "VIMUSERS.org")
+                `("Vim users migration guide" . ,r))
+               (t
+                `(r . ,r))))
+            result)))
+
+(defun helm-spacemacs//documentation-action-open-file (candidate)
+  "Open documentation FILE."
+  (let ((file (concat spacemacs-docs-directory candidate)))
+    (cond ((and (equal (file-name-extension file) "md")
+                (not helm-current-prefix-arg))
+           (condition-case nil
+               (with-current-buffer (find-file-noselect file)
+                 (gh-md-render-buffer)
+                 (kill-this-buffer))
+             ;; if anything fails, fall back to simply open file
+             (find-file file)))
+          ((equal (file-name-extension file) "org")
+           (spacemacs/view-org-file file "^" 'all))
+          (t
+           (find-file file)))))
 
 (defun helm-spacemacs//layer-source ()
   "Construct the helm source for the layer section."
   `((name . "Layers")
     (candidates . ,(sort (configuration-layer/get-layers-list) 'string<))
     (candidate-number-limit)
-    (action . (("Open README.md" . helm-spacemacs//layer-action-open-readme)
+    (action . (("Open README.org" . helm-spacemacs//layer-action-open-readme)
                ("Open packages.el" . helm-spacemacs//layer-action-open-packages)
                ("Open extensions.el" . helm-spacemacs//layer-action-open-extensions)))))
 
@@ -85,8 +150,14 @@
   "Return the sorted candidates for package source."
   (let (result)
     (ht-aeach (dolist (layer value)
-                (push (format "(%s) %s" layer key) result))
+                (push (format "(%s) package: %s" layer key) result))
               helm-spacemacs-all-packages)
+    (ht-aeach (dolist (layer value)
+                (push (format "(%s) pre-extension: %s" layer key) result))
+              helm-spacemacs-all-pre-extensions)
+    (ht-aeach (dolist (layer value)
+                (push (format "(%s) post-extension: %s" layer key) result))
+              helm-spacemacs-all-post-extensions)
     (sort result 'string<)))
 
 (defun helm-spacemacs//toggle-source ()
@@ -103,20 +174,39 @@
       (push (symbol-name (car toggle)) result))
     (sort result 'string<)))
 
+(defun helm-spacemacs//dotspacemacs-source ()
+  `((name . "Dotfile")
+    (candidates . ,(helm-spacemacs//dotspacemacs-candidates))
+    (candidate-number-limit)
+    (action . (("Go to variable" . helm-spacemacs//go-to-dotfile-variable)))))
+
+(defun helm-spacemacs//dotspacemacs-candidates ()
+  "Return the sorted candidates for all the dospacemacs variables."
+  (sort (all-completions "" obarray
+                         (lambda (x)
+                           (and (boundp x)
+                                (not (keywordp x))
+                                (string-prefix-p "dotspacemacs"
+                                                 (symbol-name x)))))
+        'string<))
+
 (defun helm-spacemacs//layer-action-open-file (file candidate)
   "Open FILE of the passed CANDIDATE."
-  (let ((path (if (and (equalp file "README.md") (equalp candidate "spacemacs"))
+  (let ((path (if (and (equalp file "README.org") (equalp candidate "spacemacs"))
                   ;; Readme for spacemacs is in the project root
                   (ht-get configuration-layer-paths (intern candidate))
                 (file-name-as-directory
                  (concat (ht-get configuration-layer-paths
                                  (intern candidate))
                          candidate)))))
-    (find-file (concat path file))))
+    (if (and (equal (file-name-extension file) "org")
+             (not helm-current-prefix-arg))
+        (spacemacs/view-org-file (concat path file) "^" 'all)
+      (find-file (concat path file)))))
 
 (defun helm-spacemacs//layer-action-open-readme (candidate)
   "Open the `README.md' file of the passed CANDIDATE."
-  (helm-spacemacs//layer-action-open-file "README.md" candidate))
+  (helm-spacemacs//layer-action-open-file "README.org" candidate))
 
 (defun helm-spacemacs//layer-action-open-packages (candidate)
   "Open the `packages.el' file of the passed CANDIDATE."
@@ -129,13 +219,16 @@
 (defun helm-spacemacs//package-action-goto-init-func (candidate)
   "Open the file `packages.el' and go to the init function."
   (save-match-data
-    (string-match "^(\\(.+\\))\s\\(.+\\)$" candidate)
+    (string-match "^(\\(.+\\))\s\\(.+\\):\s\\(.+\\)$" candidate)
     (let* ((layer (match-string 1 candidate))
-           (package (match-string 2 candidate))
+           (type (match-string 2 candidate))
+           (package (match-string 3 candidate))
            (path (file-name-as-directory
                   (concat (ht-get configuration-layer-paths (intern layer))
                           layer)))
-           (filename (concat path "packages.el")))
+           (filename (cond ((string-equal "package" type)
+                            (concat path "packages.el"))
+                           (t (concat path "extensions.el")))))
       (find-file filename)
       (goto-char (point-min))
       (re-search-forward (format "init-%s" package))
@@ -146,6 +239,15 @@
   (let ((toggle (assq (intern candidate) spacemacs-toggles)))
     (when toggle
       (funcall (plist-get (cdr toggle) :function)))))
+
+(defun helm-spacemacs//go-to-dotfile-variable (candidate)
+  "Go to candidate in the dotfile."
+  (find-file dotspacemacs-filepath)
+  (goto-char (point-min))
+  ;; try to exclude comments
+  (re-search-forward (format "^[a-z\s\\(\\-]*%s" candidate))
+  (beginning-of-line))
+
 
 (provide 'helm-spacemacs)
 

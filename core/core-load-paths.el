@@ -15,8 +15,11 @@
 (defconst spacemacs-core-directory
   (expand-file-name (concat user-emacs-directory "core/"))
   "Spacemacs core directory.")
+(defconst spacemacs-info-directory
+  (expand-file-name (concat spacemacs-core-directory "info/"))
+  "Spacemacs info files directory")
 (defconst spacemacs-release-notes-directory
-  (expand-file-name (concat spacemacs-core-directory "release-notes/"))
+  (expand-file-name (concat spacemacs-info-directory "release-notes/"))
   "Spacemacs release notes directory")
 (defconst spacemacs-banner-directory
   (expand-file-name (concat spacemacs-core-directory "banners/"))
@@ -30,6 +33,12 @@
 (defconst spacemacs-cache-directory
   (expand-file-name (concat user-emacs-directory ".cache/"))
   "Spacemacs storage area for persistent files")
+(defconst spacemacs-auto-save-directory
+  (expand-file-name (concat spacemacs-cache-directory "auto-save/"))
+  "Spacemacs auto-save directory")
+(defconst spacemacs-docs-directory
+  (expand-file-name (concat user-emacs-directory "doc/"))
+  "Spacemacs documentation directory.")
 
 (defconst user-home-directory
   (expand-file-name "~/")
